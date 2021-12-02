@@ -1,4 +1,4 @@
-# Бот для дюскорда weweplay
+# Discord бот weweplay
 
 ## Команды
 
