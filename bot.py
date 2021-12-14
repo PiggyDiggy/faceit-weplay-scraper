@@ -1,9 +1,10 @@
 import discord
-import asyncio
-import aiohttp
-from ff_scraper import get_info
-from utils import validate_arguments, get_embed_color
-from weplay_scraper import get_ids, get_nicknames_and_avatars
+from asyncio import gather
+from aiohttp import ClientSession
+from utils import validate_arguments, get_embed_color, get_thumbnail
+from weplay_api import get_ids, get_nicknames_and_avatars
+from faceit_api import get_stats_for_multiple_players
+from steam_api import get_accounts_info
 
 
 class MyClient(discord.Client):
@@ -14,70 +15,81 @@ class MyClient(discord.Client):
         content = message.content
         channel = message.channel
         if content.startswith("bb!findplayers"):
-            try:
-                await self.find(content, channel)
-            except ValueError as err:
-                embed = discord.Embed(description=str(err), color=0xe74c3c)
-                return await channel.send(embed=embed)
-        elif content.startswith("bb!test"):
-            await self.parse_info_for_embed({
-                "platforms":
-                    {'steam_info': ['Аккаунт создан: 02.06.2012', 'Всего часов в CS:GO: скрыто', 'Часов CS:GO за 2 недели: скрыто'],
-                     'faceit_info': {'username': 'GennadiyPig', 'lvl_img': '/resources/ranks/skill_level_6_lg.png', 'stats': ['Матчей: 17', 'ELO: 1416', 'K/D: 1.18', 'Побед: 71.0%', 'Побед: 12', 'HS: 49.8%']}},
-                "media":
-                    {'nickname': 'BOT Bull', 'avatar': 'https://static-prod.weplay.tv/users/avatar/user_295459_aa67d41c9fb71984864232202eb056b2.8C8F5C-2D360E-4F371F.png'}
-            },
-                channel
-            )
+            await self.find(content, channel)
 
     async def find(self, content, channel):
         arguments = content.split()
         if len(arguments) < 3 or len(arguments) > 4:
             raise ValueError(
-                "**!findplayers** takes exactly 2 arguments: **lobby id** and **side**")
+                "**!findplayers** takes exactly 2 arguments: **lobby id** and **side**"
+            )
         lobby_id, side = validate_arguments(content.split())
-        info_dict = await self.get_all_players_info(lobby_id, side)
-        players_info, media = info_dict.values()
-        for i, player in enumerate(players_info):
-            info = {"platforms": player, "media": media[i]}
+        message = await channel.send(
+            ":manual_wheelchair: **LOADING** :manual_wheelchair:"
+        )
+        data = await self.get_players_info(lobby_id, side)
+        steam_info, faceit_info, media = data["responses"]
+        for steam_id in data["ids"]:
+            info = {
+                "platforms": {"steam_info": {}, "faceit_info": {}},
+                "media": media[steam_id],
+            }
+            if steam_id in steam_info.keys():
+                info["platforms"]["steam_info"] = steam_info[steam_id]
+            if steam_id in faceit_info.keys():
+                info["platforms"]["faceit_info"] = faceit_info[steam_id]
             await self.parse_info_for_embed(info, channel)
+        await message.delete()
 
-    async def get_all_players_info(self, lobby_id, side):
-        async with aiohttp.ClientSession() as session:
+    async def get_players_info(self, lobby_id, side):
+        async with ClientSession() as session:
             ids = await get_ids(session, lobby_id, side)
-            res = await asyncio.gather(*(get_info(session, user_id["steam_id"]) for user_id in ids))
-            media = await get_nicknames_and_avatars(session, ids)
-            return {"res": res, "media": media}
+            responses = await gather(
+                get_accounts_info(ids["steam_ids"]),
+                get_stats_for_multiple_players(ids["steam_ids"]),
+                get_nicknames_and_avatars(session, ids),
+            )
+            return {"ids": ids["steam_ids"], "responses": responses}
 
     async def parse_info_for_embed(self, info, channel):
-        if not isinstance(info["platforms"], dict):
-            return await self.send_embed(color=0xe74c3c, channel=channel, user=info["media"], description=info["platforms"])
         steam_info, faceit_info = info["platforms"].values()
-        stats = []
-        if isinstance(steam_info, list):
-            stats.extend(s.split(": ") for s in steam_info)
-        if isinstance(faceit_info, dict):
-            faceit_nickname = faceit_info["username"].replace("_", "\_")
-            color = get_embed_color(faceit_info["lvl_img"])
-            stats.extend(s.split(": ") for s in faceit_info["stats"])
+        if steam_info == {} and faceit_info == {}:
             return await self.send_embed(
-                color=color,
+                color=0xE74C3C,
                 channel=channel,
                 user=info["media"],
-                description=f"_Faceit nickname: **{faceit_nickname}**_",
-                thumbnail=f"https://faceitfinder.com{faceit_info['lvl_img']}",
-                stats=stats)
-        await self.send_embed(color=0xe74c3c, channel=channel, user=info["media"], description=faceit_info)
-
-    async def send_embed(self, *, color, channel, user=None, description=None, thumbnail=None, stats=[]):
-        embed = discord.Embed(
-            description=description,
-            color=color
+                description="Аккаунт **steam** скрыт\nАккаунт **faceit** не найден",
+            )
+        stats = {**steam_info}
+        if faceit_info == {}:
+            return await self.send_embed(
+                color=0xE74C3C,
+                channel=channel,
+                user=info["media"],
+                description="Аккаунт **faceit** не найден",
+                stats=stats,
+            )
+        faceit_nickname = faceit_info.pop("nickname").replace("_", "\_")
+        thumbnail = get_thumbnail(faceit_info["ELO"])
+        color = get_embed_color(faceit_info["ELO"])
+        stats = {**faceit_info, **stats}
+        await self.send_embed(
+            color=color,
+            channel=channel,
+            user=info["media"],
+            description=f"_Faceit nickname: **{faceit_nickname}**_",
+            thumbnail=thumbnail,
+            stats=stats,
         )
+
+    async def send_embed(
+        self, *, color, channel, user=None, description=None, thumbnail=None, stats={}
+    ):
+        embed = discord.Embed(description=description, color=color)
         if user:
             embed.set_author(name=user["nickname"], icon_url=user["avatar"])
         if thumbnail:
             embed.set_thumbnail(url=thumbnail)
-        for title, value in stats:
+        for title, value in stats.items():
             embed.add_field(name=title, value=value.capitalize())
         await channel.send(embed=embed)
