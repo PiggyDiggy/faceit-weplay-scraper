@@ -1,11 +1,12 @@
 from asyncio import gather
 from aiohttp import ClientSession
 from utils import request
+from tokens import faceit_api_key
 
 base_url = "https://open.faceit.com/data/v4/players"
 headers = {
     "accept": "application/json",
-    "Authorization": "TOKEN",
+    "Authorization": f"Bearer {faceit_api_key}",
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36",
 }
 

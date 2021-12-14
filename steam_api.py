@@ -1,10 +1,10 @@
 from utils import request, get_date
 from asyncio import gather
 from aiohttp import ClientSession
+from tokens import steam_api_key
 
 base_url = "https://api.steampowered.com"
-key = "TOKEN"
-
+key = steam_api_key
 
 async def get_players_summaries(session: ClientSession, steam_ids: list):
     url = f"{base_url}/ISteamUser/GetPlayerSummaries/v0002/"
