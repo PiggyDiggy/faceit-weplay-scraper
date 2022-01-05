@@ -1,7 +1,6 @@
 from re import compile
 from time import gmtime, strftime
 from aiohttp import ClientSession
-from bs4 import BeautifulSoup
 
 headers = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36"
@@ -44,14 +43,6 @@ async def request(
             return await response.text()
     except Exception as exc:
         print(f"Unable to request url {url} due to {exc}")
-
-
-async def get_page(
-    session: ClientSession, url: str, method: str, headers: dict = headers, **kwargs
-):
-    response = await request(session, url, method, headers, **kwargs)
-    soup = BeautifulSoup(response, "lxml")
-    return soup
 
 
 def validate_arguments(args: list):

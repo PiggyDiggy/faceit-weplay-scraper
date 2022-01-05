@@ -6,6 +6,7 @@ from tokens import steam_api_key
 base_url = "https://api.steampowered.com"
 key = steam_api_key
 
+
 async def get_players_summaries(session: ClientSession, steam_ids: list):
     url = f"{base_url}/ISteamUser/GetPlayerSummaries/v0002/"
     params = {"key": key, "steamids": ",".join(steam_ids)}
